@@ -86,25 +86,47 @@ def get_year_stats(year: int) -> dict:
 def render_bar(value: int, maximum: int) -> str:
     if value <= 0:
         return "·"
-    width = max(1, round(value / maximum * 12))
+    width = max(1, round(value / maximum * 16))
     return "█" * width
 
 
 def render_table(stats: list[dict]) -> str:
     max_commits = max((item["commits"] for item in stats), default=1)
+    year_width = 6
+    commit_width = max(7, max((len(str(item["commits"])) for item in stats), default=1))
+    bar_width = 16
+
+    def pad(text: str, width: int) -> str:
+        return text.ljust(width)
+
+    def rpad(text: str, width: int) -> str:
+        return text.rjust(width)
+
+    top = f"┌{'─' * (year_width + 2)}┬{'─' * (commit_width + 2)}┬{'─' * (bar_width + 2)}┐"
+    mid = f"├{'─' * (year_width + 2)}┼{'─' * (commit_width + 2)}┼{'─' * (bar_width + 2)}┤"
+    bottom = f"└{'─' * (year_width + 2)}┴{'─' * (commit_width + 2)}┴{'─' * (bar_width + 2)}┘"
+
     lines = [
-        "| 年份 | Commit | 全部贡献 | 其他贡献(PR / Review / Issue) |",
-        "| --- | ---: | ---: | --- |",
+        "```text",
+        top,
+        f"│ {pad('YEAR', year_width)} │ {pad('COMMITS', commit_width)} │ {pad('SIGNAL', bar_width)} │",
+        mid,
     ]
     for item in stats:
-        others = item["prs"] + item["reviews"] + item["issues"]
+        bar = render_bar(item["commits"], max_commits)
         lines.append(
-            f"| {item['year']} | {item['commits']} {render_bar(item['commits'], max_commits)} | "
-            f"{item['all']} | {others} |"
+            f"│ {pad(str(item['year']), year_width)} │ "
+            f"{rpad(str(item['commits']), commit_width)} │ "
+            f"{pad(bar, bar_width)} │"
         )
-    lines.append("")
-    lines.append(
-        f"_最后更新：{dt.datetime.now().strftime('%Y-%m-%d %H:%M')}（按 GitHub 贡献统计生成）_"
+    lines.extend(
+        [
+            bottom,
+            "",
+            f"updated  {dt.datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "source   github contributions",
+            "```",
+        ]
     )
     return "\n".join(lines)
 
