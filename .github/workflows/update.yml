@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: update-readme-contributions
+  cancel-in-progress: true
+
 jobs:
   update-readme:
     runs-on: ubuntu-latest
@@ -24,13 +28,13 @@ jobs:
       - name: Update README contribution table
         env:
           GITHUB_USERNAME: dss-time
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           README_TIMEZONE: UTC
-          START_YEAR: 2021
-          SIGNAL_WIDTH: 18
+          START_YEAR: "2021"
+          SIGNAL_WIDTH: "18"
         run: python scripts/update_contributions.py
 
-      - name: Commit and push changes
+      - name: Commit and push README update
         run: |
           if git diff --quiet README.md; then
             echo "README.md has no changes."
