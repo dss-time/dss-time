@@ -24,20 +24,34 @@ USERNAME = (
     or "dss-time"
 )
 
-TOKEN = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+# PROFILE_TOKEN is recommended if you want the README number to match your GitHub profile page.
+# GITHUB_TOKEN can only see what the workflow token is allowed to see.
+TOKEN = (
+    os.getenv("PROFILE_TOKEN")
+    or os.getenv("GH_TOKEN")
+    or os.getenv("GITHUB_TOKEN")
+)
+
 README_PATH = Path(os.getenv("README_PATH", "README.md"))
 
 START_MARKER = "<!-- CONTRIBUTIONS:START -->"
 END_MARKER = "<!-- CONTRIBUTIONS:END -->"
 
-START_YEAR = os.getenv("START_YEAR", "2021")
+START_YEAR = int(os.getenv("START_YEAR", "2021"))
 SIGNAL_WIDTH = int(os.getenv("SIGNAL_WIDTH", "18"))
 README_TIMEZONE = os.getenv("README_TIMEZONE", "UTC")
+
+# total = GitHub profile contribution graph total, usually the number shown like "840 contributions in 2022".
+# commit = totalCommitContributions only.
+COUNT_MODE = os.getenv("COUNT_MODE", "total").strip().lower()
+
+# Keep your original README format by default.
+TABLE_VALUE_LABEL = os.getenv("TABLE_VALUE_LABEL", "COMMITS")
 
 
 def github_graphql(query: str, variables: dict) -> dict:
     if not TOKEN:
-        raise RuntimeError("Missing token: please set GITHUB_TOKEN or GH_TOKEN.")
+        raise RuntimeError("Missing token: please set PROFILE_TOKEN, GH_TOKEN, or GITHUB_TOKEN.")
 
     body = json.dumps(
         {
@@ -83,36 +97,13 @@ def iso_utc(dt: datetime) -> str:
 def get_years() -> list[int]:
     now_year = datetime.now(timezone.utc).year
 
-    if START_YEAR:
-        start_year = int(START_YEAR)
-        if start_year > now_year:
-            raise RuntimeError("START_YEAR cannot be greater than current year.")
-        return list(range(now_year, start_year - 1, -1))
+    if START_YEAR > now_year:
+        raise RuntimeError("START_YEAR cannot be greater than current year.")
 
-    query = """
-    query($login: String!) {
-      user(login: $login) {
-        contributionsCollection {
-          contributionYears
-        }
-      }
-    }
-    """
-
-    data = github_graphql(query, {"login": USERNAME})
-    user = data.get("user")
-
-    if not user:
-        raise RuntimeError(f"GitHub user not found: {USERNAME}")
-
-    years = user["contributionsCollection"]["contributionYears"]
-    if not years:
-        return [now_year]
-
-    return list(range(now_year, min(years) - 1, -1))
+    return list(range(now_year, START_YEAR - 1, -1))
 
 
-def get_commit_contributions(year: int) -> int:
+def get_contribution_count(year: int) -> int:
     now = datetime.now(timezone.utc)
 
     start = datetime(year, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -127,6 +118,10 @@ def get_commit_contributions(year: int) -> int:
       user(login: $login) {
         contributionsCollection(from: $from, to: $to) {
           totalCommitContributions
+          restrictedContributionsCount
+          contributionCalendar {
+            totalContributions
+          }
         }
       }
     }
@@ -145,7 +140,15 @@ def get_commit_contributions(year: int) -> int:
     if not user:
         raise RuntimeError(f"GitHub user not found: {USERNAME}")
 
-    return int(user["contributionsCollection"]["totalCommitContributions"])
+    collection = user["contributionsCollection"]
+
+    if COUNT_MODE == "commit":
+        return int(collection["totalCommitContributions"])
+
+    if COUNT_MODE == "total":
+        return int(collection["contributionCalendar"]["totalContributions"])
+
+    raise RuntimeError("COUNT_MODE must be either 'total' or 'commit'.")
 
 
 def make_signal(count: int, max_count: int) -> str:
@@ -179,7 +182,7 @@ def render_block(rows: list[tuple[int, int]]) -> str:
     max_count = max((count for _, count in rows), default=0)
 
     lines = [
-        "| YEAR | COMMITS | SIGNAL |",
+        f"| YEAR | {TABLE_VALUE_LABEL} | SIGNAL |",
         "|---:|---:|:---|",
     ]
 
@@ -187,9 +190,11 @@ def render_block(rows: list[tuple[int, int]]) -> str:
         signal = make_signal(count, max_count)
         lines.append(f"| {year} | {count} | {signal} |")
 
+    # The two spaces after the updated line are intentional.
+    # They force a visible line break in GitHub Markdown.
     lines += [
         "",
-        f"updated  {get_updated_time()}",
+        f"updated  {get_updated_time()}  ",
         "source   github contributions",
     ]
 
@@ -206,9 +211,8 @@ def replace_contribution_area(content: str, new_block: str) -> str:
         )
         return pattern.sub(new_area, content, count=1)
 
-    # Compatible with an old README that only has the table text.
     old_area_pattern = re.compile(
-        r"(?ms)^ *\| *YEAR *\| *COMMITS *\| *SIGNAL *\|.*?"
+        r"(?ms)^ *\| *YEAR *\| *(COMMITS|CONTRIBUTIONS) *\| *SIGNAL *\|.*?"
         r"^ *source +github contributions *$"
     )
 
@@ -223,7 +227,7 @@ def replace_contribution_area(content: str, new_block: str) -> str:
 
 def main() -> int:
     years = get_years()
-    rows = [(year, get_commit_contributions(year)) for year in years]
+    rows = [(year, get_contribution_count(year)) for year in years]
 
     new_block = render_block(rows)
 
@@ -236,6 +240,7 @@ def main() -> int:
 
     print(f"Updated: {README_PATH}")
     print(f"GitHub user: {USERNAME}")
+    print(f"Count mode: {COUNT_MODE}")
     print(f"Years: {', '.join(str(year) for year, _ in rows)}")
 
     return 0
