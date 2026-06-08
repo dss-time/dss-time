@@ -28,10 +28,19 @@ jobs:
       - name: Update README contribution table
         env:
           GITHUB_USERNAME: dss-time
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Add a repository secret named PROFILE_TOKEN if you want private/org contributions
+          # to match your GitHub profile contribution graph.
+          PROFILE_TOKEN: ${{ secrets.PROFILE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+          # total = match GitHub profile graph, e.g. "840 contributions in 2022"
+          # commit = only totalCommitContributions
+          COUNT_MODE: total
+
           README_TIMEZONE: UTC
           START_YEAR: "2021"
           SIGNAL_WIDTH: "18"
+          TABLE_VALUE_LABEL: COMMITS
         run: python scripts/update_contributions.py
 
       - name: Commit and push README update
